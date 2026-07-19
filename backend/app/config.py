@@ -8,12 +8,19 @@ env_file_path = os.path.join(root_dir, ".env")
 
 class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite+aiosqlite:///./sales_intel.db"
+    MONGODB_URI: str = ""
+    MONGODB_URL: str = ""
+    MONGODB_DB_NAME: str = "sales_intel"
     REDIS_URL: str = "redis://localhost:6379/0"
     
     JWT_SECRET_KEY: str = "supersecretkeychangeinproduction"
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+
+    @property
+    def mongo_connection_string(self) -> str:
+        return self.MONGODB_URI or self.MONGODB_URL or "mongodb://localhost:27017"
 
     @property
     def async_database_url(self) -> str:

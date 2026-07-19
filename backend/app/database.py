@@ -1,33 +1,18 @@
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from motor.motor_asyncio import AsyncIOMotorClient
 from sqlalchemy.orm import declarative_base
 from config import settings
 
-# Create async database engine
-engine = create_async_engine(
-    settings.async_database_url,
-    echo=True,  # Log SQL queries for debugging
-    future=True
-)
-
-# Create async session factory
-SessionLocal = async_sessionmaker(
-    bind=engine,
-    class_=AsyncSession,
-    expire_on_commit=False,
-    autocommit=False,
-    autoflush=False
-)
-
-# Declarative Base for models
+# Declarative Base fallback if needed
 Base = declarative_base()
 
-# Dependency for FastAPI endpoints to get DB session
+# Initialize Motor MongoDB Client
+mongo_client = AsyncIOMotorClient(settings.mongo_connection_string)
+mongo_db = mongo_client.get_database(settings.MONGODB_DB_NAME)
+
 async def get_db():
-    async with SessionLocal() as session:
-        try:
-            yield session
-        except Exception:
-            await session.rollback()
-            raise
-        finally:
-            await session.close()
+    """FastAPI Dependency for obtaining MongoDB database reference."""
+    yield mongo_db
+
+def get_mongo_db():
+    """Helper function to get direct AsyncIOMotorDatabase instance."""
+    return mongo_db

@@ -6,10 +6,8 @@ services:
     buildCommand: pip install -r backend/requirements.txt
     startCommand: uvicorn main:app --app-dir backend/app --host 0.0.0.0 --port $PORT
     envVars:
-      - key: DATABASE_URL
-        fromDatabase:
-          name: sales-intel-db
-          property: connectionString
+      - key: MONGODB_URI
+        sync: false
       - key: REDIS_URL
         fromService:
           type: redis
@@ -31,10 +29,11 @@ services:
     buildCommand: pip install -r backend/requirements.txt
     startCommand: cd backend/app && celery -A worker.tasks.celery_app worker --loglevel=info
     envVars:
-      - key: DATABASE_URL
-        fromDatabase:
-          name: sales-intel-db
-          property: connectionString
+      - key: MONGODB_URI
+        fromService:
+          type: web
+          name: sales-intel-backend
+          property: envVar:MONGODB_URI
       - key: REDIS_URL
         fromService:
           type: redis
@@ -48,28 +47,7 @@ services:
       - key: JWT_ALGORITHM
         value: HS256
 
-  # 3. Static Site Frontend (Vite)
-  - type: static
-    name: sales-intel-frontend
-    env: static
-    buildCommand: cd frontend && npm install && npm run build
-    publishDir: frontend/dist
-    envVars:
-      - key: VITE_API_URL
-        fromService:
-          type: web
-          name: sales-intel-backend
-          property: url
-
-databases:
-  # PostgreSQL Database
-  - name: sales-intel-db
-    databaseName: sales_intel
-    user: sales_intel_user
-    plan: free
-
 redis:
-  # Redis Instance
   - name: sales-intel-redis
     plan: free
-    ipAllowList: [] # Access restricted to services within the same Render account
+    ipAllowList: []

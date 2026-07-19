@@ -1,12 +1,10 @@
 from datetime import date, datetime, timezone
-from typing import List, Optional
+from typing import List, Optional, Any
 from fastapi import APIRouter, Depends, HTTPException, status, Request
-from sqlalchemy import func, select, desc
-from sqlalchemy.ext.asyncio import AsyncSession
 import numpy as np
 
 from database import get_db
-from models import SalesRecord, User
+from models import UserDoc
 from auth.dependencies import get_current_user
 from analytics.cache import cache_response, invalidate_company_cache
 from analytics.schemas import (
@@ -25,36 +23,57 @@ async def get_dashboard_kpis(
     request: Request,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    current_user: UserDoc = Depends(get_current_user),
+    db: Any = Depends(get_db)
 ):
-    query = select(
-        func.coalesce(func.sum(SalesRecord.revenue), 0.0).label("revenue"),
-        func.coalesce(func.sum(SalesRecord.profit), 0.0).label("profit"),
-        func.count(SalesRecord.id).label("transactions"),
-        func.count(func.distinct(SalesRecord.product)).label("products"),
-        func.count(func.distinct(SalesRecord.customer)).label("customers")
-    ).filter(SalesRecord.company_id == current_user.company_id)
-
+    match_stage = {"company_id": current_user.company_id}
     if start_date:
-        query = query.filter(SalesRecord.date >= start_date)
+        match_stage["date"] = {"$gte": str(start_date)}
     if end_date:
-        query = query.filter(SalesRecord.date <= end_date)
+        if "date" in match_stage:
+            match_stage["date"]["$lte"] = str(end_date)
+        else:
+            match_stage["date"] = {"$lte": str(end_date)}
 
-    res = await db.execute(query)
-    row = res.first()
+    pipeline = [
+        {"$match": match_stage},
+        {
+            "$group": {
+                "_id": None,
+                "revenue": {"$sum": "$revenue"},
+                "profit": {"$sum": "$profit"},
+                "transactions": {"$sum": 1},
+                "products": {"$addToSet": "$product"},
+                "customers": {"$addToSet": "$customer"},
+            }
+        }
+    ]
 
-    rev = float(row.revenue)
-    prof = float(row.profit)
+    cursor = db.sales_records.aggregate(pipeline)
+    results = await cursor.to_list(length=1)
+
+    if not results:
+        return DashboardKPIs(
+            total_revenue=0.0,
+            total_profit=0.0,
+            total_transactions=0,
+            profit_margin_pct=0.0,
+            unique_products=0,
+            unique_customers=0
+        )
+
+    res = results[0]
+    rev = float(res.get("revenue", 0.0))
+    prof = float(res.get("profit", 0.0))
     margin = (prof / rev * 100.0) if rev > 0.0 else 0.0
 
     return DashboardKPIs(
         total_revenue=rev,
         total_profit=prof,
-        total_transactions=int(row.transactions),
+        total_transactions=int(res.get("transactions", 0)),
         profit_margin_pct=margin,
-        unique_products=int(row.products),
-        unique_customers=int(row.customers)
+        unique_products=len(res.get("products", [])),
+        unique_customers=len(res.get("customers", []))
     )
 
 @router.get("/sales/monthly", response_model=List[MonthlyTrendRow])
@@ -63,33 +82,40 @@ async def get_monthly_sales_trends(
     request: Request,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    current_user: UserDoc = Depends(get_current_user),
+    db: Any = Depends(get_db)
 ):
-    # Dialect-agnostic grouping (SQLite vs Postgres)
-    dialect = db.bind.dialect.name
-    if dialect == "sqlite":
-        month_group = func.strftime("%Y-%m", SalesRecord.date)
-    else:
-        month_group = func.to_char(SalesRecord.date, "YYYY-MM")
-
-    query = select(
-        month_group.label("month"),
-        func.coalesce(func.sum(SalesRecord.revenue), 0.0).label("revenue"),
-        func.coalesce(func.sum(SalesRecord.profit), 0.0).label("profit")
-    ).filter(SalesRecord.company_id == current_user.company_id)
-
+    match_stage = {"company_id": current_user.company_id}
     if start_date:
-        query = query.filter(SalesRecord.date >= start_date)
+        match_stage["date"] = {"$gte": str(start_date)}
     if end_date:
-        query = query.filter(SalesRecord.date <= end_date)
+        if "date" in match_stage:
+            match_stage["date"]["$lte"] = str(end_date)
+        else:
+            match_stage["date"] = {"$lte": str(end_date)}
 
-    query = query.group_by(month_group).order_by(month_group)
-    res = await db.execute(query)
+    pipeline = [
+        {"$match": match_stage},
+        {
+            "$group": {
+                "_id": {"$substr": ["$date", 0, 7]},
+                "revenue": {"$sum": "$revenue"},
+                "profit": {"$sum": "$profit"}
+            }
+        },
+        {"$sort": {"_id": 1}}
+    ]
+
+    cursor = db.sales_records.aggregate(pipeline)
+    results = await cursor.to_list(length=500)
 
     return [
-        MonthlyTrendRow(month=row.month, revenue=float(row.revenue), profit=float(row.profit))
-        for row in res.all()
+        MonthlyTrendRow(
+            month=doc["_id"],
+            revenue=float(doc.get("revenue", 0.0)),
+            profit=float(doc.get("profit", 0.0))
+        )
+        for doc in results if doc.get("_id")
     ]
 
 @router.get("/top-products", response_model=List[ProductSummaryRow])
@@ -97,28 +123,34 @@ async def get_monthly_sales_trends(
 async def get_top_products(
     request: Request,
     limit: int = 10,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    current_user: UserDoc = Depends(get_current_user),
+    db: Any = Depends(get_db)
 ):
-    query = select(
-        SalesRecord.product,
-        func.coalesce(func.sum(SalesRecord.revenue), 0.0).label("revenue"),
-        func.coalesce(func.sum(SalesRecord.profit), 0.0).label("profit"),
-        func.count(SalesRecord.id).label("sales_count")
-    ).filter(SalesRecord.company_id == current_user.company_id) \
-     .group_by(SalesRecord.product) \
-     .order_by(desc("revenue")) \
-     .limit(limit)
+    pipeline = [
+        {"$match": {"company_id": current_user.company_id}},
+        {
+            "$group": {
+                "_id": "$product",
+                "revenue": {"$sum": "$revenue"},
+                "profit": {"$sum": "$profit"},
+                "sales_count": {"$sum": 1}
+            }
+        },
+        {"$sort": {"revenue": -1}},
+        {"$limit": limit}
+    ]
 
-    res = await db.execute(query)
+    cursor = db.sales_records.aggregate(pipeline)
+    results = await cursor.to_list(length=limit)
+
     return [
         ProductSummaryRow(
-            product=row.product,
-            revenue=float(row.revenue),
-            profit=float(row.profit),
-            sales_count=int(row.sales_count)
+            product=doc["_id"],
+            revenue=float(doc.get("revenue", 0.0)),
+            profit=float(doc.get("profit", 0.0)),
+            sales_count=int(doc.get("sales_count", 0))
         )
-        for row in res.all()
+        for doc in results if doc.get("_id")
     ]
 
 @router.get("/top-customers", response_model=List[CustomerSummaryRow])
@@ -126,28 +158,34 @@ async def get_top_products(
 async def get_top_customers(
     request: Request,
     limit: int = 10,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    current_user: UserDoc = Depends(get_current_user),
+    db: Any = Depends(get_db)
 ):
-    query = select(
-        SalesRecord.customer,
-        func.coalesce(func.sum(SalesRecord.revenue), 0.0).label("revenue"),
-        func.coalesce(func.sum(SalesRecord.profit), 0.0).label("profit"),
-        func.count(SalesRecord.id).label("sales_count")
-    ).filter(SalesRecord.company_id == current_user.company_id) \
-     .group_by(SalesRecord.customer) \
-     .order_by(desc("revenue")) \
-     .limit(limit)
+    pipeline = [
+        {"$match": {"company_id": current_user.company_id}},
+        {
+            "$group": {
+                "_id": "$customer",
+                "revenue": {"$sum": "$revenue"},
+                "profit": {"$sum": "$profit"},
+                "sales_count": {"$sum": 1}
+            }
+        },
+        {"$sort": {"revenue": -1}},
+        {"$limit": limit}
+    ]
 
-    res = await db.execute(query)
+    cursor = db.sales_records.aggregate(pipeline)
+    results = await cursor.to_list(length=limit)
+
     return [
         CustomerSummaryRow(
-            customer=row.customer,
-            revenue=float(row.revenue),
-            profit=float(row.profit),
-            sales_count=int(row.sales_count)
+            customer=doc["_id"],
+            revenue=float(doc.get("revenue", 0.0)),
+            profit=float(doc.get("profit", 0.0)),
+            sales_count=int(doc.get("sales_count", 0))
         )
-        for row in res.all()
+        for doc in results if doc.get("_id")
     ]
 
 @router.get("/forecast", response_model=ForecastResult)
@@ -155,39 +193,36 @@ async def get_top_customers(
 async def forecast_sales(
     request: Request,
     steps: int = 3,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    current_user: UserDoc = Depends(get_current_user),
+    db: Any = Depends(get_db)
 ):
-    # 1. Fetch monthly history
-    dialect = db.bind.dialect.name
-    if dialect == "sqlite":
-        month_group = func.strftime("%Y-%m", SalesRecord.date)
-    else:
-        month_group = func.to_char(SalesRecord.date, "YYYY-MM")
+    pipeline = [
+        {"$match": {"company_id": current_user.company_id}},
+        {
+            "$group": {
+                "_id": {"$substr": ["$date", 0, 7]},
+                "revenue": {"$sum": "$revenue"},
+                "profit": {"$sum": "$profit"}
+            }
+        },
+        {"$sort": {"_id": 1}}
+    ]
 
-    query = select(
-        month_group.label("month"),
-        func.coalesce(func.sum(SalesRecord.revenue), 0.0).label("revenue"),
-        func.coalesce(func.sum(SalesRecord.profit), 0.0).label("profit")
-    ).filter(SalesRecord.company_id == current_user.company_id) \
-     .group_by(month_group) \
-     .order_by(month_group)
+    cursor = db.sales_records.aggregate(pipeline)
+    results = await cursor.to_list(length=500)
 
-    res = await db.execute(query)
     history = [
-        MonthlyTrendRow(month=row.month, revenue=float(row.revenue), profit=float(row.profit))
-        for row in res.all()
+        MonthlyTrendRow(month=doc["_id"], revenue=float(doc.get("revenue", 0.0)), profit=float(doc.get("profit", 0.0)))
+        for doc in results if doc.get("_id")
     ]
 
     forecasted = []
     method = "average_fallback"
 
     if len(history) < 3:
-        # Fallback: Flat forecast using average of history
         avg_revenue = np.mean([h.revenue for h in history]) if history else 0.0
         avg_profit = np.mean([h.profit for h in history]) if history else 0.0
         
-        # Forecast steps months
         last_year = datetime.now(timezone.utc).year
         last_month = datetime.now(timezone.utc).month
 
@@ -198,7 +233,6 @@ async def forecast_sales(
                 MonthlyTrendRow(month=f"{next_y}-{next_m:02d}", revenue=avg_revenue, profit=avg_profit)
             )
     else:
-        # Linear Regression using Numpy Least Squares Polyfit
         method = "linear_regression"
         x = np.arange(len(history))
         y_rev = np.array([h.revenue for h in history])
@@ -207,11 +241,14 @@ async def forecast_sales(
         slope_rev, intercept_rev = np.polyfit(x, y_rev, 1)
         slope_prof, intercept_prof = np.polyfit(x, y_prof, 1)
 
-        # Retrieve year and month from the last recorded month in history
         last_date_str = history[-1].month
-        last_date = datetime.strptime(last_date_str, "%Y-%m")
-        last_year = last_date.year
-        last_month = last_date.month
+        try:
+            last_date = datetime.strptime(last_date_str, "%Y-%m")
+            last_year = last_date.year
+            last_month = last_date.month
+        except Exception:
+            last_year = datetime.now(timezone.utc).year
+            last_month = datetime.now(timezone.utc).month
 
         for i in range(1, steps + 1):
             next_x = len(history) + i - 1
@@ -228,6 +265,5 @@ async def forecast_sales(
 
 @router.post("/cache/invalidate/{company_id}", status_code=status.HTTP_200_OK)
 async def invalidate_cache(company_id: int):
-    """Internal webhook endpoint to flush Redis cache keys for a tenant."""
     await invalidate_company_cache(company_id)
     return {"status": "success", "message": f"Cache for company {company_id} flushed."}

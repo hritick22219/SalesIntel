@@ -1,26 +1,5 @@
-
-
 services:
-  # 1. PostgreSQL Database Service
-  db:
-    image: postgres:15-alpine
-    container_name: sales_intel_db
-    restart: always
-    environment:
-      POSTGRES_USER: sales_intel_user
-      POSTGRES_PASSWORD: sales_intel_password
-      POSTGRES_DB: sales_intel
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U sales_intel_user -d sales_intel"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
-  # 2. Redis Cache & Message Broker Service
+  # 1. Redis Cache & Message Broker Service
   redis:
     image: redis:7-alpine
     container_name: sales_intel_redis
@@ -30,7 +9,7 @@ services:
     volumes:
       - redis_data:/data
 
-  # 3. FastAPI Backend Web API Service
+  # 2. FastAPI Backend Web API Service
   backend:
     build:
       context: ./backend
@@ -40,19 +19,16 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - DATABASE_URL=postgresql+asyncpg://sales_intel_user:sales_intel_password@db:5432/sales_intel
+      - MONGODB_URI=${MONGODB_URI}
       - REDIS_URL=redis://redis:6379/0
       - JWT_SECRET_KEY=supersecretkeychangeinproduction
       - JWT_ALGORITHM=HS256
       - ACCESS_TOKEN_EXPIRE_MINUTES=30
       - REFRESH_TOKEN_EXPIRE_DAYS=7
     depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_started
+      - redis
 
-  # 4. Celery Asynchronous Background Worker
+  # 3. Celery Asynchronous Background Worker
   worker:
     build:
       context: ./backend
@@ -62,17 +38,14 @@ services:
     working_dir: /app/app
     command: celery -A worker.tasks.celery_app worker --loglevel=info
     environment:
-      - DATABASE_URL=postgresql+asyncpg://sales_intel_user:sales_intel_password@db:5432/sales_intel
+      - MONGODB_URI=${MONGODB_URI}
       - REDIS_URL=redis://redis:6379/0
       - JWT_SECRET_KEY=supersecretkeychangeinproduction
       - JWT_ALGORITHM=HS256
     depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_started
+      - redis
 
-  # 5. React Frontend (Nginx)
+  # 4. React Frontend (Nginx)
   frontend:
     build:
       context: ./frontend
@@ -87,5 +60,4 @@ services:
       - backend
 
 volumes:
-  postgres_data:
   redis_data:
