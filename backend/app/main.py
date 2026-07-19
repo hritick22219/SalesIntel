@@ -2,7 +2,6 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from database import engine, Base
 from redis_client import redis_client
 
 # Import routers
@@ -13,12 +12,11 @@ from report.router import router as report_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Automatically create tables in database (if using local SQLite or PostgreSQL)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
     yield
-    # Cleanup Redis connection on shutdown
-    await redis_client.close()
+    try:
+        await redis_client.close()
+    except Exception:
+        pass
 
 app = FastAPI(
     title="Sales Intelligence API",
@@ -27,15 +25,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS setup
+# CORS setup (Allow all origins for Vercel & local development)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:8080",
-        "http://127.0.0.1:8080",
-        "http://localhost:5173",
-        "http://127.0.0.1:5173"
-    ],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

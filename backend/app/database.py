@@ -4,6 +4,7 @@ from config import settings
 
 # Declarative Base fallback if needed
 Base = declarative_base()
+engine = None
 
 # Initialize Motor MongoDB Client
 mongo_client = AsyncIOMotorClient(settings.mongo_connection_string)
