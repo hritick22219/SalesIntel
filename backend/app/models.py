@@ -46,3 +46,8 @@ class SalesRecordDoc(BaseModel):
     revenue: float
     profit: float
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+# Aliases for backward compatibility
+User = UserDoc
+ImportJob = ImportJobDoc
+SalesRecord = SalesRecordDoc
