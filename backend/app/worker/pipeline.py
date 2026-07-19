@@ -5,7 +5,7 @@ from typing import List, Dict, Any, Optional
 import pandas as pd
 from pydantic import BaseModel, Field, ValidationError
 
-from models import ImportJob, ImportJobStatus
+from models import ImportJobStatus, ImportJobDoc, ImportJob
 
 # Synonym mappings for automatic header detection
 COLUMN_SYNONYMS = {
@@ -27,7 +27,7 @@ class SalesRecordValidator(BaseModel):
 
 # --- Pipeline Steps ---
 
-def load_data(job: ImportJob) -> pd.DataFrame:
+def load_data(job: Any) -> pd.DataFrame:
     """Load raw data into a Pandas DataFrame based on the job type."""
     if job.source_type == "csv":
         if not job.file_path or not os.path.exists(job.file_path):
