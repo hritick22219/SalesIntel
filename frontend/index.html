@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sales Intelligence Dashboard</title>
+  
+  <!-- Fonts & Icons -->
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  
+  <!-- Local Styles -->
+  <link rel="stylesheet" href="/src/style.css">
+</head>
+<body>
+  <!-- Ambient Backdrop Gradients -->
+  <div class="gradient-bg">
+    <div class="g1"></div>
+    <div class="g2"></div>
+    <div class="g3"></div>
+  </div>
+
+  <!-- Main App Container -->
+  <div id="app" class="app-container">
+    
+    <!-- 1. Authentication View (Login/Register) -->
+    <div id="auth-view" class="auth-wrapper hidden">
+      <div class="auth-card">
+        <div class="auth-header">
+          <i class="fa-solid fa-chart-line logo-icon"></i>
+          <h1>Sales Intelligence</h1>
+          <p>Login or register to access your data portal</p>
+        </div>
+        
+        <!-- Toggle Tabs -->
+        <div class="auth-tabs">
+          <button id="tab-login" class="tab-btn active">Sign In</button>
+          <button id="tab-register" class="tab-btn">Register</button>
+        </div>
+
+        <!-- Login Form -->
+        <form id="login-form" class="auth-form">
+          <div class="input-group">
+            <label for="login-email">Email Address</label>
+            <div class="input-field">
+              <i class="fa-regular fa-envelope"></i>
+              <input type="email" id="login-email" required placeholder="name@company.com">
+            </div>
+          </div>
+          <div class="input-group">
+            <label for="login-password">Password</label>
+            <div class="input-field">
+              <i class="fa-solid fa-lock"></i>
+              <input type="password" id="login-password" required placeholder="••••••••">
+            </div>
+          </div>
+          <button type="submit" class="btn-primary">Sign In <i class="fa-solid fa-arrow-right"></i></button>
+        </form>
+
+        <!-- Register Form -->
+        <form id="register-form" class="auth-form hidden">
+          <div class="input-group">
+            <label for="reg-email">Email Address</label>
+            <div class="input-field">
+              <i class="fa-regular fa-envelope"></i>
+              <input type="email" id="reg-email" required placeholder="name@company.com">
+            </div>
+          </div>
+          <div class="input-group">
+            <label for="reg-company">Company ID (Tenant)</label>
+            <div class="input-field">
+              <i class="fa-solid fa-building"></i>
+              <input type="number" id="reg-company" required placeholder="e.g. 10" value="10">
+            </div>
+          </div>
+          <div class="input-group">
+            <label for="reg-password">Password</label>
+            <div class="input-field">
+              <i class="fa-solid fa-lock"></i>
+              <input type="password" id="reg-password" required placeholder="••••••••">
+            </div>
+          </div>
+          <button type="submit" class="btn-primary">Create Account <i class="fa-solid fa-user-plus"></i></button>
+        </form>
+        
+        <div id="auth-alert" class="alert hidden"></div>
+      </div>
+    </div>
+
+    <!-- 2. Main Dashboard Layout (Sidebar + Content Panel) -->
+    <div id="dashboard-view" class="dashboard-layout hidden">
+      <!-- Sidebar Navigation -->
+      <aside class="sidebar">
+        <div class="sidebar-logo">
+          <i class="fa-solid fa-chart-line"></i>
+          <span>SalesIntel</span>
+        </div>
+        <nav class="sidebar-nav">
+          <button id="nav-analytics" class="nav-item active"><i class="fa-solid fa-gauge"></i> Dashboard</button>
+          <button id="nav-ingest" class="nav-item"><i class="fa-solid fa-cloud-arrow-up"></i> Data Ingestion</button>
+          <button id="nav-reports" class="nav-item"><i class="fa-solid fa-file-invoice-dollar"></i> Reports</button>
+        </nav>
+        <div class="sidebar-footer">
+          <span class="user-email" id="display-user-email">user@company.com</span>
+          <button id="btn-logout" class="btn-logout"><i class="fa-solid fa-right-from-bracket"></i> Logout</button>
+        </div>
+      </aside>
+
+      <!-- Main Content Area -->
+      <main class="main-content">
+        <header class="content-header">
+          <h2 id="view-title">Dashboard Overview</h2>
+          <span class="tenant-badge">Company ID: <strong id="display-company-id">-</strong></span>
+        </header>
+        
+        <div id="content-body">
+          <!-- A. Analytics Panel -->
+          <section id="panel-analytics" class="panel-section">
+            <!-- 6 KPI Grid -->
+            <div class="kpi-grid">
+              <div class="kpi-card">
+                <div class="kpi-icon"><i class="fa-solid fa-wallet"></i></div>
+                <div class="kpi-details">
+                  <h3>Total Revenue</h3>
+                  <p id="kpi-revenue">$0.00</p>
+                </div>
+              </div>
+              <div class="kpi-card">
+                <div class="kpi-icon"><i class="fa-solid fa-coins"></i></div>
+                <div class="kpi-details">
+                  <h3>Total Profit</h3>
+                  <p id="kpi-profit">$0.00</p>
+                </div>
+              </div>
+              <div class="kpi-card">
+                <div class="kpi-icon"><i class="fa-solid fa-chart-pie"></i></div>
+                <div class="kpi-details">
+                  <h3>Profit Margin</h3>
+                  <p id="kpi-margin">0.00%</p>
+                </div>
+              </div>
+              <div class="kpi-card">
+                <div class="kpi-icon"><i class="fa-solid fa-receipt"></i></div>
+                <div class="kpi-details">
+                  <h3>Transactions</h3>
+                  <p id="kpi-transactions">0</p>
+                </div>
+              </div>
+              <div class="kpi-card">
+                <div class="kpi-icon"><i class="fa-solid fa-box"></i></div>
+                <div class="kpi-details">
+                  <h3>Unique Products</h3>
+                  <p id="kpi-products">0</p>
+                </div>
+              </div>
+              <div class="kpi-card">
+                <div class="kpi-icon"><i class="fa-solid fa-users"></i></div>
+                <div class="kpi-details">
+                  <h3>Unique Customers</h3>
+                  <p id="kpi-customers">0</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Chart & Forecasting Grid -->
+            <div class="dashboard-body-grid">
+              <!-- Trends Chart Card -->
+              <div class="chart-card glass-panel">
+                <h3>Monthly Revenue & Profit Trends</h3>
+                <div class="chart-container">
+                  <canvas id="trendsChart"></canvas>
+                </div>
+              </div>
+
+              <!-- Forecast Card -->
+              <div class="forecast-card glass-panel">
+                <h3>Sales Forecasting (3-Month Projection)</h3>
+                <div class="forecast-details">
+                  <span class="method-label" id="forecast-method">Method: -</span>
+                  <div class="forecast-list" id="forecast-rows">
+                    <!-- Dynamic Forecast Items -->
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Bottom Aggregations Grid -->
+            <div class="aggregations-grid">
+              <!-- Top Products Card -->
+              <div class="glass-panel text-card">
+                <h3>Top Products by Revenue</h3>
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Product</th>
+                      <th class="text-right">Sales Count</th>
+                      <th class="text-right">Revenue</th>
+                    </tr>
+                  </thead>
+                  <tbody id="top-products-table">
+                    <!-- Dynamic Top Products -->
+                  </tbody>
+                </table>
+              </div>
+
+              <!-- Top Customers Card -->
+              <div class="glass-panel text-card">
+                <h3>Top Customers by Revenue</h3>
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Customer</th>
+                      <th class="text-right">Sales Count</th>
+                      <th class="text-right">Revenue</th>
+                    </tr>
+                  </thead>
+                  <tbody id="top-customers-table">
+                    <!-- Dynamic Top Customers -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+
+          <!-- B. Data Ingestion Panel -->
+          <section id="panel-ingest" class="panel-section hidden">
+            <div class="ingest-grid">
+              <!-- File Ingestion Card -->
+              <div class="glass-panel ingest-card">
+                <h3><i class="fa-solid fa-file-csv"></i> File Import</h3>
+                <p>Drag and drop or select CSV or Excel files mapping sales transactions.</p>
+                
+                <div class="file-drop-zone" id="drop-zone">
+                  <i class="fa-solid fa-cloud-arrow-up cloud-icon"></i>
+                  <span id="file-label">Drag & Drop CSV / Excel or click to select</span>
+                  <input type="file" id="file-input" accept=".csv, .xlsx" class="hidden">
+                </div>
+
+                <div class="ingest-actions">
+                  <button id="btn-upload" class="btn-primary" disabled><i class="fa-solid fa-paper-plane"></i> Upload & Process</button>
+                </div>
+                <div id="upload-status" class="alert hidden"></div>
+              </div>
+
+              <!-- Database Connectors Card -->
+              <div class="glass-panel ingest-card">
+                <h3><i class="fa-solid fa-database"></i> Database Connectors</h3>
+                <p>Connect and pull sales data from external production databases.</p>
+                
+                <form id="db-connector-form" class="connector-form">
+                  <div class="form-row">
+                    <div class="input-group full">
+                      <label for="db-type">Database Engine</label>
+                      <select id="db-type" class="form-select">
+                        <option value="postgres">PostgreSQL</option>
+                        <option value="mysql">MySQL</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div class="form-row-split">
+                    <div class="input-group">
+                      <label for="db-host">Host Address</label>
+                      <input type="text" id="db-host" required placeholder="e.g. localhost">
+                    </div>
+                    <div class="input-group short">
+                      <label for="db-port">Port</label>
+                      <input type="number" id="db-port" required placeholder="5432" value="5432">
+                    </div>
+                  </div>
+                  <div class="form-row-split">
+                    <div class="input-group">
+                      <label for="db-username">Username</label>
+                      <input type="text" id="db-username" required placeholder="postgres">
+                    </div>
+                    <div class="input-group">
+                      <label for="db-password">Password</label>
+                      <input type="password" id="db-password" required placeholder="••••••••">
+                    </div>
+                  </div>
+                  <div class="form-row-split">
+                    <div class="input-group">
+                      <label for="db-name">Database Name</label>
+                      <input type="text" id="db-name" required placeholder="sales_db">
+                    </div>
+                    <div class="input-group">
+                      <label for="db-table">Table Name</label>
+                      <input type="text" id="db-table" required placeholder="sales_records">
+                    </div>
+                  </div>
+
+                  <div class="connector-actions">
+                    <button type="button" id="btn-db-test" class="btn-secondary"><i class="fa-solid fa-network-wired"></i> Test Connection</button>
+                    <button type="submit" id="btn-db-import" class="btn-primary"><i class="fa-solid fa-download"></i> Start Ingestion</button>
+                  </div>
+                </form>
+                <div id="db-alert" class="alert hidden"></div>
+              </div>
+            </div>
+
+            <!-- Live Job Status / Polling Card -->
+            <div class="glass-panel job-tracker-card">
+              <h3><i class="fa-solid fa-hourglass-half"></i> Active Ingestion Tracker</h3>
+              <p>Below is the status tracking of your current running and past ETL pipeline jobs.</p>
+              
+              <div class="tracker-body">
+                <div class="tracker-row">
+                  <span>Job ID:</span>
+                  <span id="tracker-job-id" class="bold">-</span>
+                </div>
+                <div class="tracker-row">
+                  <span>ETL Type:</span>
+                  <span id="tracker-job-type" class="bold">-</span>
+                </div>
+                <div class="tracker-row">
+                  <span>Job Status:</span>
+                  <span id="tracker-job-status" class="status-badge">-</span>
+                </div>
+                <div class="tracker-row">
+                  <span>Rows Processed:</span>
+                  <span id="tracker-job-rows" class="bold">0</span>
+                </div>
+                <div class="tracker-row error-row hidden" id="tracker-error-container">
+                  <span>Error Details:</span>
+                  <span id="tracker-job-error" class="error-msg">-</span>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- C. Reports Panel -->
+          <section id="panel-reports" class="panel-section hidden">
+            <div class="glass-panel report-export-card">
+              <div class="report-icon"><i class="fa-solid fa-file-arrow-down"></i></div>
+              <h3>Export Sales and Profit Reports</h3>
+              <p>Download filtered subsets of your normalized transactions database in ready-to-present CSV or styled Microsoft Excel workbook sheets.</p>
+              
+              <!-- Download Filter Controls -->
+              <div class="filter-controls">
+                <div class="input-group">
+                  <label for="report-start-date">Start Date</label>
+                  <input type="date" id="report-start-date">
+                </div>
+                <div class="input-group">
+                  <label for="report-end-date">End Date</label>
+                  <input type="date" id="report-end-date">
+                </div>
+                <div class="input-group">
+                  <label for="report-product">Product Filter</label>
+                  <input type="text" id="report-product" placeholder="e.g. Widget X">
+                </div>
+                <div class="input-group">
+                  <label for="report-customer">Customer Filter</label>
+                  <input type="text" id="report-customer" placeholder="e.g. Acme Corp">
+                </div>
+              </div>
+
+              <div class="report-actions">
+                <button id="btn-export-csv" class="btn-primary"><i class="fa-solid fa-file-csv"></i> Download CSV Stream</button>
+                <button id="btn-export-excel" class="btn-success"><i class="fa-solid fa-file-excel"></i> Download Styled Excel</button>
+              </div>
+              <div id="report-alert" class="alert hidden"></div>
+            </div>
+          </section>
+        </div>
+      </main>
+    </div>
+
+  </div>
+
+  <!-- Core App Controller Script -->
+  <script type="module" src="/src/app.js"></script>
+</body>
+</html>

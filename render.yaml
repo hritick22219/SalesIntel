@@ -1,0 +1,75 @@
+services:
+  # 1. FastAPI Backend Web Service
+  - type: web
+    name: sales-intel-backend
+    env: python
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: uvicorn main:app --app-dir backend/app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: sales-intel-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: sales-intel-redis
+          property: connectionString
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: JWT_ALGORITHM
+        value: HS256
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "30"
+      - key: REFRESH_TOKEN_EXPIRE_DAYS
+        value: "7"
+
+  # 2. Celery Asynchronous Background Worker
+  - type: worker
+    name: sales-intel-worker
+    env: python
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: cd backend/app && celery -A worker.tasks.celery_app worker --loglevel=info
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: sales-intel-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: sales-intel-redis
+          property: connectionString
+      - key: JWT_SECRET_KEY
+        fromService:
+          type: web
+          name: sales-intel-backend
+          property: envVar:JWT_SECRET_KEY
+      - key: JWT_ALGORITHM
+        value: HS256
+
+  # 3. Static Site Frontend (Vite)
+  - type: static
+    name: sales-intel-frontend
+    env: static
+    buildCommand: cd frontend && npm install && npm run build
+    publishDir: frontend/dist
+    envVars:
+      - key: VITE_API_URL
+        fromService:
+          type: web
+          name: sales-intel-backend
+          property: url
+
+databases:
+  # PostgreSQL Database
+  - name: sales-intel-db
+    databaseName: sales_intel
+    user: sales_intel_user
+    plan: free
+
+redis:
+  # Redis Instance
+  - name: sales-intel-redis
+    plan: free
+    ipAllowList: [] # Access restricted to services within the same Render account
