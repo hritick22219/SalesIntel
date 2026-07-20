@@ -153,7 +153,13 @@ async function handleLogin(e) {
       body: params
     });
 
-    const data = await response.json();
+    const text = await response.text();
+    let data = {};
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch (e) {
+      throw new Error(`Server returned status ${response.status}. Please check backend logs.`);
+    }
     
     if (!response.ok) {
       throw new Error(data.detail || "Authentication login failed");
@@ -192,7 +198,13 @@ async function handleRegister(e) {
       body: JSON.stringify({ email, company_id, password })
     });
 
-    const data = await response.json();
+    const text = await response.text();
+    let data = {};
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch (e) {
+      throw new Error(`Server returned status ${response.status}. Please check backend logs.`);
+    }
 
     if (!response.ok) {
       throw new Error(data.detail || "Registration failed");

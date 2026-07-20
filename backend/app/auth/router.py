@@ -42,6 +42,7 @@ async def register(user_in: UserCreate, db: Any = Depends(get_db)):
     result = await db.users.insert_one(user_dict)
     user_dict["_id"] = str(result.inserted_id)
     return UserResponse(
+        id=str(result.inserted_id),
         email=user_dict["email"],
         role=user_dict["role"],
         company_id=user_dict["company_id"]
