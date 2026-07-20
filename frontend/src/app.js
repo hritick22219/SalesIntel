@@ -278,7 +278,13 @@ async function handleFileUpload() {
       body: formData
     });
 
-    const data = await response.json();
+    const text = await response.text();
+    let data = {};
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch (e) {
+      throw new Error(`Upload failed with status ${response.status}. Please check backend server logs.`);
+    }
 
     if (!response.ok) {
       throw new Error(data.detail || "File ingestion failed");

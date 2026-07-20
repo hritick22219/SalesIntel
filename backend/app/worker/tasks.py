@@ -1,8 +1,9 @@
 import asyncio
 import os
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, date, timezone
 import httpx
+import pandas as pd
 from celery import Celery
 from celery.utils.log import get_task_logger
 
@@ -14,6 +15,25 @@ from worker.pipeline import load_data, clean_and_normalize, validate_records
 celery_app = Celery("tasks", broker=settings.REDIS_URL, backend=settings.REDIS_URL)
 
 logger = get_task_logger(__name__)
+
+def sanitize_record(record: dict, job_id: int, company_id: Any) -> dict:
+    """Sanitize numpy types and dates for MongoDB BSON compatibility."""
+    clean = {}
+    clean["job_id"] = int(job_id)
+    clean["company_id"] = int(company_id) if company_id is not None else None
+
+    for k, v in record.items():
+        if k in ("job_id", "company_id"):
+            continue
+        if pd.isna(v):
+            clean[k] = None
+        elif isinstance(v, (date, datetime)):
+            clean[k] = v.isoformat()
+        elif hasattr(v, "item"):  # numpy scalars
+            clean[k] = v.item()
+        else:
+            clean[k] = v
+    return clean
 
 async def async_process_import_job(job_id: int):
     db = get_mongo_db()
@@ -47,13 +67,9 @@ async def async_process_import_job(job_id: int):
 
         logger.info(f"Inserting {len(valid_records)} rows into sales_records collection...")
         if valid_records:
-            for record in valid_records:
-                record["job_id"] = job_id
-                record["company_id"] = job.get("company_id")
-                if "date" in record and hasattr(record["date"], "isoformat"):
-                    record["date"] = record["date"].isoformat()
-
-            await db.sales_records.insert_many(valid_records)
+            company_id = job.get("company_id")
+            sanitized_records = [sanitize_record(r, job_id, company_id) for r in valid_records]
+            await db.sales_records.insert_many(sanitized_records)
 
         now_comp = datetime.now(timezone.utc)
         await db.import_jobs.update_one(
